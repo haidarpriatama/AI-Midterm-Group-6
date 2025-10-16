@@ -1,0 +1,35 @@
+{
+  "config": {
+    "lr": 0.0003,
+    "gamma": 0.99,
+    "buffer_size": 50000,
+    "batch_size": 128,
+    "target_update": 500,
+    "episodes": 2000,
+    "epsilon_start": 1.0,
+    "epsilon_end": 0.05,
+    "epsilon_decay": 0.998
+  },
+  "evaluation": {
+    "DQN": {
+      "mean_reward": 490.17319940719574,
+      "std_reward": 818.9337398518127,
+      "success_rate": 0.45
+    },
+    "Double DQN": {
+      "mean_reward": -222.84801667107808,
+      "std_reward": 636.0481926204482,
+      "success_rate": 0.1
+    },
+    "Dueling DQN": {
+      "mean_reward": 84.19300606141867,
+      "std_reward": 679.0156427812728,
+      "success_rate": 0.24
+    },
+    "Prioritized DQN": {
+      "mean_reward": 96.25795054781602,
+      "std_reward": 967.1350562644699,
+      "success_rate": 0.35
+    }
+  }
+}
