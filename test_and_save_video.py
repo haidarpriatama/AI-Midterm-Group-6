@@ -24,115 +24,58 @@ def load_agent(agent_type, model_path, state_dim, action_dim):
     return agent
 
 
-def test_agent_with_video(agent, env, episodes=10, video_path='output_video.mp4', fps=30):
-    """Test agent and save video"""
+def add_info_overlay(frame, agent_name, episode, episode_reward, mean_reward, is_success):
+    """Add information overlay to frame in top-right corner"""
+    # Create semi-transparent background
+    overlay = frame.copy()
     
-    # Video writer setup
-    frame_size = (env.screen_w, env.screen_h)
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(video_path, fourcc, fps, frame_size)
+    # Position for text (top-right corner)
+    x_pos = frame.shape[1] - 280
+    y_start = 10
     
-    episode_rewards = []
-    success_count = 0
+    # Background rectangle
+    cv2.rectangle(overlay, (x_pos - 10, y_start), 
+                  (frame.shape[1] - 10, y_start + 130), 
+                  (0, 0, 0), -1)
     
-    print(f"Recording {episodes} episodes to {video_path}...")
+    # Blend overlay
+    alpha = 0.7
+    frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
     
-    for episode in range(episodes):
-        state, _ = env.reset()
-        episode_reward = 0
-        done = False
-        truncated = False
-        frame_count = 0
-        
-        print(f"\nEpisode {episode + 1}/{episodes}")
-        
-        while not (done or truncated):
-            # Select action (greedy)
-            action = agent.select_action(state, epsilon=0.0)
-            
-            # Take step
-            next_state, reward, done, truncated, _ = env.step(action)
-            episode_reward += reward
-            state = next_state
-            
-            # Render and capture frame
-            env.render()
-            
-            # Capture the pygame screen
-            frame = pygame.surfarray.array3d(env.screen)
-            frame = frame.transpose([1, 0, 2])  # Pygame uses (width, height, channels)
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # Convert RGB to BGR for OpenCV
-            video_writer.write(frame)
-            
-            frame_count += 1
-        
-        episode_rewards.append(episode_reward)
-        if episode_reward > 500:
-            success_count += 1
-            print(f"  Result: SUCCESS! Reward: {episode_reward:.2f}")
-        else:
-            print(f"  Result: Failed. Reward: {episode_reward:.2f}")
+    # Text parameters
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    small_font_scale = 0.5
+    color = (255, 255, 255)
+    thickness = 1
     
-    video_writer.release()
+    # Add text lines
+    y = y_start + 25
+    cv2.putText(frame, f"Variant: {agent_name}", (x_pos, y), 
+                font, small_font_scale, (100, 200, 255), thickness, cv2.LINE_AA)
     
-    print(f"\n{'='*60}")
-    print(f"Video saved to: {video_path}")
-    print(f"Total episodes: {episodes}")
-    print(f"Mean reward: {np.mean(episode_rewards):.2f} ± {np.std(episode_rewards):.2f}")
-    print(f"Success rate: {success_count}/{episodes} ({success_count/episodes*100:.1f}%)")
-    print(f"{'='*60}\n")
+    y += 25
+    cv2.putText(frame, f"Episode: {episode}", (x_pos, y), 
+                font, small_font_scale, color, thickness, cv2.LINE_AA)
     
-    return episode_rewards
+    y += 25
+    cv2.putText(frame, f"Reward: {episode_reward:.1f}", (x_pos, y), 
+                font, small_font_scale, color, thickness, cv2.LINE_AA)
+    
+    y += 25
+    cv2.putText(frame, f"Mean: {mean_reward:.1f}", (x_pos, y), 
+                font, small_font_scale, color, thickness, cv2.LINE_AA)
+    
+    y += 25
+    status_color = (0, 255, 0) if is_success else (0, 0, 255)
+    status_text = "SUCCESS" if is_success else "FAILED"
+    cv2.putText(frame, f"Status: {status_text}", (x_pos, y), 
+                font, small_font_scale, status_color, thickness + 1, cv2.LINE_AA)
+    
+    return frame
 
 
-def test_agent_interactive(agent, env):
-    """Interactive testing - watch the agent perform"""
-    print("\nInteractive Testing Mode")
-    print("Press SPACE to start new episode, ESC to quit")
-    
-    running = True
-    episode = 0
-    
-    while running:
-        state, _ = env.reset()
-        episode += 1
-        episode_reward = 0
-        done = False
-        truncated = False
-        
-        print(f"\nEpisode {episode} - Starting...")
-        
-        while not (done or truncated) and running:
-            # Handle pygame events
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        running = False
-            
-            # Select action
-            action = agent.select_action(state, epsilon=0.0)
-            
-            # Take step
-            next_state, reward, done, truncated, _ = env.step(action)
-            episode_reward += reward
-            state = next_state
-            
-            # Render
-            env.render()
-        
-        if episode_reward > 500:
-            print(f"Episode {episode} - SUCCESS! Reward: {episode_reward:.2f}")
-        else:
-            print(f"Episode {episode} - Failed. Reward: {episode_reward:.2f}")
-        
-        if running:
-            print("Press SPACE for another episode, or close window to exit...")
-
-
-def compare_all_agents_video(video_path='all_agents_comparison.mp4', episodes_per_agent=3):
-    """Create video comparing all agents"""
+def test_all_agents_with_video(video_path='outputs/all_variants_comparison.mp4', episodes=8):
+    """Test all 4 variants with 8 episodes each and save to single video"""
     
     state_dim = 9
     action_dim = 4
@@ -150,34 +93,23 @@ def compare_all_agents_video(video_path='all_agents_comparison.mp4', episodes_pe
     video_writer = cv2.VideoWriter(video_path, fourcc, 30, frame_size)
     
     print(f"Creating comparison video: {video_path}")
+    print(f"Testing {len(agents_info)} variants with {episodes} episodes each\n")
     
-    for agent_name, model_path in agents_info:
+    for agent_idx, (agent_name, model_path) in enumerate(agents_info):
         if not os.path.exists(model_path):
             print(f"Warning: Model not found: {model_path}")
             continue
         
-        print(f"\nRecording {agent_name}...")
+        print(f"[{agent_idx + 1}/{len(agents_info)}] Recording {agent_name}...")
         agent = load_agent(agent_name, model_path, state_dim, action_dim)
         
-        for ep in range(episodes_per_agent):
+        episode_rewards = []
+        
+        for ep in range(episodes):
             state, _ = env.reset()
             done = False
             truncated = False
             episode_reward = 0
-            
-            # Add title frame
-            for _ in range(60):  # 2 seconds at 30fps
-                env.render()
-                frame = pygame.surfarray.array3d(env.screen)
-                frame = frame.transpose([1, 0, 2])
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                
-                # Add text overlay
-                text = f"{agent_name} - Episode {ep+1}"
-                cv2.putText(frame, text, (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 
-                           1, (255, 255, 0), 2, cv2.LINE_AA)
-                
-                video_writer.write(frame)
             
             while not (done or truncated):
                 action = agent.select_action(state, epsilon=0.0)
@@ -186,40 +118,45 @@ def compare_all_agents_video(video_path='all_agents_comparison.mp4', episodes_pe
                 state = next_state
                 
                 env.render()
+                
+                # Capture frame
                 frame = pygame.surfarray.array3d(env.screen)
                 frame = frame.transpose([1, 0, 2])
                 frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 
+                # Calculate current mean
+                current_mean = np.mean(episode_rewards + [episode_reward]) if episode_rewards else episode_reward
+                is_success = episode_reward > 500
+                
                 # Add overlay
-                cv2.putText(frame, f"{agent_name}", (20, 40), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2, cv2.LINE_AA)
-                cv2.putText(frame, f"Reward: {episode_reward:.1f}", (20, 70), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
+                frame = add_info_overlay(frame, agent_name, ep + 1, episode_reward, 
+                                        current_mean, is_success)
                 
                 video_writer.write(frame)
             
-            print(f"  Episode {ep+1}: Reward = {episode_reward:.2f}")
+            episode_rewards.append(episode_reward)
+            success = "✓" if episode_reward > 500 else "✗"
+            print(f"  Episode {ep+1}/{episodes}: Reward = {episode_reward:.2f} {success}")
+        
+        # Print summary for this agent
+        mean_reward = np.mean(episode_rewards)
+        success_count = sum(1 for r in episode_rewards if r > 500)
+        print(f"  Summary: Mean = {mean_reward:.2f}, Success = {success_count}/{episodes}\n")
     
     video_writer.release()
     env.close()
-    print(f"\nComparison video saved to: {video_path}")
+    print(f"{'='*60}")
+    print(f"Video saved to: {video_path}")
+    print(f"{'='*60}")
 
 
 def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Test trained DQN agents')
-    parser.add_argument('--agent', type=str, default='Dueling DQN',
-                       choices=['DQN', 'Double DQN', 'Dueling DQN', 'Prioritized DQN'],
-                       help='Agent type to test')
-    parser.add_argument('--model', type=str, default=None,
-                       help='Path to model file (default: models/{agent}_model.pth)')
-    parser.add_argument('--mode', type=str, default='video',
-                       choices=['video', 'interactive', 'compare'],
-                       help='Testing mode')
-    parser.add_argument('--episodes', type=int, default=10,
-                       help='Number of episodes to record')
-    parser.add_argument('--output', type=str, default='outputs/test_video.mp4',
+    parser.add_argument('--episodes', type=int, default=8,
+                       help='Number of episodes per variant')
+    parser.add_argument('--output', type=str, default='outputs/all_variants_comparison.mp4',
                        help='Output video path')
     
     args = parser.parse_args()
@@ -228,33 +165,8 @@ def main():
     os.makedirs('outputs', exist_ok=True)
     os.makedirs('models', exist_ok=True)
     
-    if args.mode == 'compare':
-        compare_all_agents_video(args.output, episodes_per_agent=3)
-    else:
-        # Setup model path
-        if args.model is None:
-            model_name = args.agent.replace(' ', '_').lower()
-            args.model = f'models/{model_name}_model.pth'
-        
-        if not os.path.exists(args.model):
-            print(f"Error: Model file not found: {args.model}")
-            print("Please train the model first using train_and_compare.py")
-            return
-        
-        # Load agent
-        env = SimpleRocketEnv(render_mode='human')
-        state_dim = env.observation_space.shape[0]
-        action_dim = env.action_space.n
-        
-        agent = load_agent(args.agent, args.model, state_dim, action_dim)
-        print(f"Loaded {args.agent} from {args.model}")
-        
-        if args.mode == 'video':
-            test_agent_with_video(agent, env, episodes=args.episodes, video_path=args.output)
-        elif args.mode == 'interactive':
-            test_agent_interactive(agent, env)
-        
-        env.close()
+    # Run the test
+    test_all_agents_with_video(video_path=args.output, episodes=args.episodes)
 
 
 if __name__ == "__main__":
